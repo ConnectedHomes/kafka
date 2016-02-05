@@ -19,7 +19,7 @@ package kafka.tools
 
 import kafka.consumer._
 import kafka.metrics.KafkaMetricsGroup
-import kafka.producer.{BaseProducer, NewShinyProducer, OldProducer}
+import kafka.producer.{BaseProducer, NewShinyProducer}
 import kafka.serializer._
 import kafka.utils._
 import org.apache.kafka.clients.producer.{ProducerConfig, ProducerRecord}
@@ -129,17 +129,25 @@ object MirrorMaker extends Logging {
     // create producer threads
     val useNewProducer = options.has(useNewProducerOpt)
     val producerProps = Utils.loadProps(options.valueOf(producerConfigOpt))
+
+    if (!producerProps.containsKey("partition.num")) {
+      println("partitions.num property is mandatory")
+      System.exit(1)
+    }
+
     val clientId = producerProps.getProperty("client.id", "")
     producerThreads = (0 until numProducers).map(i => {
       producerProps.setProperty("client.id", clientId + "-" + i)
-      val producer =
-      if (useNewProducer) {
-        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer")
-        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer")
-        new NewShinyProducer(producerProps)
+
+      if (!useNewProducer) {
+        println("Old producer is not supported. Please use 'new.producer' parameter when starting the mirror maker.")
+        System.exit(1)
       }
-      else
-        new OldProducer(producerProps)
+
+      producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer")
+      producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer")
+      val producer = new NewShinyProducer(producerProps)
+
       new ProducerThread(mirrorDataChannel, producer, i)
     })
 

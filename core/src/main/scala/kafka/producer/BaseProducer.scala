@@ -24,19 +24,35 @@ import java.util.Properties
 trait BaseProducer {
   def send(topic: String, key: Array[Byte], value: Array[Byte])
   def close()
+
+  private val randomLookingRealNum = Math.sqrt(5)
+
+  def bucket(numOfBuckets: Int, id: Long): Int = {
+    Math.floor(numOfBuckets * (id * randomLookingRealNum % 1)).toInt
+  }
+
+  def toPartition(partitionNum: Int, key: Array[Byte]): Int = {
+    bucket(partitionNum, Binary.fromUInt48(key))
+  }
 }
 
 class NewShinyProducer(producerProps: Properties) extends BaseProducer {
-  import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
+  import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
   import org.apache.kafka.clients.producer.internals.ErrorLoggingCallback
 
   // decide whether to send synchronously based on producer properties
   val sync = producerProps.getProperty("producer.type", "async").equals("sync")
 
+  val partitionNum = Option(producerProps.getProperty("partition.num")).map(_.toInt)
+
   val producer = new KafkaProducer[Array[Byte],Array[Byte]](producerProps)
 
   override def send(topic: String, key: Array[Byte], value: Array[Byte]) {
-    val record = new ProducerRecord[Array[Byte],Array[Byte]](topic, key, value)
+    val record = partitionNum match {
+      case None => new ProducerRecord[Array[Byte],Array[Byte]](topic, key, value)
+      case Some(v) => new ProducerRecord[Array[Byte],Array[Byte]](topic, toPartition(v, key), key, value)
+    }
+
     if(sync) {
       this.producer.send(record).get()
     } else {
@@ -65,5 +81,25 @@ class OldProducer(producerProps: Properties) extends BaseProducer {
   override def close() {
     this.producer.close()
   }
+}
+
+object Binary {
+
+  def fromUInt48(bytes: Array[Byte]): Long =
+    (bytes(0) & 0xFFL) << 40 |(bytes(1) & 0xFFL) << 32 |(bytes(2) & 0xFFL) << 24 |(bytes(3) & 0xFFL) << 16 |(bytes(4) & 0xFFL) << 8 |(bytes(5) & 0xFFL)
+
+  def toUInt48(value: Long): Array[Byte] = {
+    val bytes = new Array[Byte](6)
+
+    bytes(0) = (( value / ( 1L << 40 ) ) & 0xFFL).asInstanceOf[Byte]
+    bytes(1) = (( value / ( 1L << 32 ) ) & 0xFFL).asInstanceOf[Byte]
+    bytes(2) = (( value / ( 1L << 24 ) ) & 0xFFL).asInstanceOf[Byte]
+    bytes(3) = (( value / ( 1L << 16 ) ) & 0xFFL).asInstanceOf[Byte]
+    bytes(4) = (( value / ( 1L << 8 ) ) & 0xFFL).asInstanceOf[Byte]
+    bytes(5) = (( value / ( 1L << 0 ) ) & 0xFFL).asInstanceOf[Byte]
+
+    bytes
+  }
+
 }
 
