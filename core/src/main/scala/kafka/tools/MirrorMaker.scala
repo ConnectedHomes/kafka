@@ -131,7 +131,7 @@ object MirrorMaker extends Logging {
     val producerProps = Utils.loadProps(options.valueOf(producerConfigOpt))
 
     if (!producerProps.containsKey("partition.num")) {
-      println("partitions.num property is mandatory")
+      println("partition.num property is mandatory")
       System.exit(1)
     }
 
