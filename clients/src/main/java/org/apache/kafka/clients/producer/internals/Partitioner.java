@@ -51,7 +51,7 @@ public class Partitioner {
      * is usually considerably faster than division (or mod).
      */
     private static Double randomLookingRealNum = Math.sqrt(5);
-    private static int multiplicativeHash(int key, int buckets) {
+    private static int multiplicativeHash(long key, int buckets) {
         return (int) Math.floor(buckets * (key * randomLookingRealNum % 1));
     }
 
@@ -99,9 +99,9 @@ public class Partitioner {
             /**
              * hash the key to choose a partition
              **/
-            int keyInt=0;
-            for(byte b : record.key()) keyInt = 10 * keyInt + (b - '0');
-            return Utils.abs(multiplicativeHash(keyInt,numPartitions));
+            long keyLong=0;
+            for(byte b : record.key()) keyLong = 10 * keyLong + (b - '0');
+            return Utils.abs(multiplicativeHash(keyLong,numPartitions));
         }
     }
 
