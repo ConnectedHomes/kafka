@@ -100,17 +100,9 @@ public class Partitioner {
         } else {
             /**
              * hash the key to choose a partition
-             * Use BigInteger to convert bytes to int
-             * unless the string is numeric in which case
-             * we parse the integer.
              **/
-            int keyInt;
-            String keyString = new String(record.key());
-            if (StringUtils.isNumeric(keyString)) {
-                keyInt = Integer.parseInt(keyString);
-            } else {
-                keyInt = new BigInteger(record.key()).intValue();
-            }
+            int keyInt=0;
+            for(byte b : record.key()) keyInt = 10 * keyInt + (b - '0');
             return Utils.abs(multiplicativeHash(keyInt,numPartitions));
         }
     }
