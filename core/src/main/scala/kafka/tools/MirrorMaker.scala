@@ -168,8 +168,8 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
         .ofType(classOf[String])
         .defaultsTo("true")
 
-      val targetTopicOpt = parser.accepts("targetTopic",
-        "Target topic to mirror.")
+      val targetTopicPrefixOpt = parser.accepts("targetTopicPrefix",
+        "Target topic prefix to mirror.")
         .withRequiredArg()
         .describedAs("Java regex (String)")
         .ofType(classOf[String])
@@ -200,7 +200,8 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
         System.exit(1)
       }
 
-      targetTopic = options.valueOf(targetTopicOpt).toString
+      targetTopic = options.valueOf(targetTopicPrefixOpt).toString + "_" + options.valueOf(whitelistOpt).toString
+      println("Kafka Mirror Target topic : " + targetTopic)
       abortOnSendFailure = options.valueOf(abortOnSendFailureOpt).toBoolean
       offsetCommitIntervalMs = options.valueOf(offsetCommitIntervalMsOpt).intValue()
       val numStreams = options.valueOf(numStreamsOpt).intValue()
@@ -222,7 +223,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
       producerProps.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer")
       producerProps.setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer")
       //Create producer to mirror data to new topic in target cluster
-      producer = new MirrorMakerProducer(producerProps, Option(options.valueOf(targetTopicOpt)))
+      producer = new MirrorMakerProducer(producerProps, targetTopic)
 
 
       val useNewConsumer = options.has(useNewConsumerOpt)
@@ -365,7 +366,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
           throw new IllegalArgumentException("Topic " + mirrorTopic + " do not exist on Source Cluster" )
         println("Subscribe to partitions from " + subscribedPartitions(0) + " to " + subscribedPartitions(1))
         // Subscribe to partition range specified in parser options
-        consumer.assign((subscribedPartitions(0).toInt until subscribedPartitions(1).toInt) map ({ i => new TopicPartition(whitelist.get, i) }))
+        consumer.assign((subscribedPartitions(0).toInt until (subscribedPartitions(1).toInt + 1)) map ({ i => new TopicPartition(whitelist.get, i) }))
       } else
         println("Mirror data from all partitions")
       consumer
@@ -581,7 +582,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
       val record = recordIter.next()
       val tp = new TopicPartition(record.topic, record.partition)
       recordCount = recordCount + 1
-      println("\nMirror data from partition: " + record.partition() + "      Partition count: " + recordCount)
+      //println("\nMirror data from partition: " + record.partition() + "      Partition count: " + recordCount)
 
       offsets.put(tp, record.offset + 1)
 
@@ -634,7 +635,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
     }
   }
 
-  private class MirrorMakerProducer(val producerProps: Properties, val topicTarget: Option[String]) {
+  private class MirrorMakerProducer(val producerProps: Properties, val topicTarget: String) {
 
     val sync = producerProps.getProperty("producer.type", "async").equals("sync")
 
@@ -645,7 +646,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
         this.producer.send(record).get()
       } else {
         this.producer.send(record,
-          new MirrorMakerProducerCallback(topicTarget.get, record.key(), record.value()))
+          new MirrorMakerProducerCallback(topicTarget, record.key(), record.value()))
       }
     }
 
