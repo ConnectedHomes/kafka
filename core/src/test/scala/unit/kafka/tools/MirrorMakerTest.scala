@@ -44,6 +44,8 @@ class MirrorMakerTest extends FunSpec with Matchers with GivenWhenThen  {
       And("a Kafka topic")
       val sourceTopicName = "upstream"
       val targetTopicName = "prod_upstream"
+
+      // val cluster =
       //val cluster = new KafkaZooKeeperCluster(topics = Seq(KafkaTopic(topicName)))
       //cluster.start()
 
@@ -58,8 +60,8 @@ class MirrorMakerTest extends FunSpec with Matchers with GivenWhenThen  {
         "--new.consumer"
       )
 
-
-      MirrorMaker.main(arr)
+      // Start mirror maker in different window 
+      //MirrorMaker.main(arr)
 
       And("a Kafka producer")
       val producer = {
