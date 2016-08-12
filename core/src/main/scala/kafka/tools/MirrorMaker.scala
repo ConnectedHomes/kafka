@@ -24,7 +24,7 @@ import java.util.regex.Pattern
 import java.util.{Collections, Properties}
 
 import com.yammer.metrics.core.Gauge
-import joptsimple.OptionParser
+import joptsimple.{ArgumentAcceptingOptionSpec, OptionParser}
 import kafka.client.ClientUtils
 import kafka.consumer.{BaseConsumerRecord, ConsumerIterator, BaseConsumer, Blacklist, ConsumerConfig, ConsumerThreadId, ConsumerTimeoutException, TopicFilter, Whitelist, ZookeeperConsumerConnector}
 import kafka.javaapi.consumer.ConsumerRebalanceListener
@@ -109,10 +109,15 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
         .ofType(classOf[java.lang.Integer])
         .defaultsTo(1)
 
-      val whitelistOpt = parser.accepts("whitelist",
+      val origWhitelistOpt = parser.accepts("whitelist",
         "Whitelist of topics to mirror.")
         .withRequiredArg()
         .describedAs("Java regex (String)")
+        .ofType(classOf[String])
+
+      val whitelistPrefixOpt = parser.accepts("prefix", "Prefix to add each topic in Whitelist.")
+        .withOptionalArg()
+        .describedAs(" prefix ")
         .ofType(classOf[String])
 
       val blacklistOpt = parser.accepts("blacklist",
@@ -167,13 +172,15 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
 
       val options = parser.parse(args: _*)
 
+      val whitelistOpt = Option(options.valueOf(origWhitelistOpt).split(",").map { x => options.valueOf(whitelistPrefixOpt) + "_" + x }.toString)
+
       if (options.has(helpOpt)) {
         parser.printHelpOn(System.out)
         System.exit(0)
       }
 
       CommandLineUtils.checkRequiredArgs(parser, options, consumerConfigOpt, producerConfigOpt)
-      if (List(whitelistOpt, blacklistOpt).count(options.has) != 1) {
+      if (List(origWhitelistOpt, blacklistOpt).count(options.has) != 1) {
         println("Exactly one of whitelist or blacklist is required.")
         System.exit(1)
       }
@@ -224,7 +231,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
           numStreams,
           options.valueOf(consumerConfigOpt),
           customRebalanceListener,
-          Option(options.valueOf(whitelistOpt)),
+          whitelistOpt,
           Option(options.valueOf(blacklistOpt)))
       } else {
         val customRebalanceListener = {
@@ -247,7 +254,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
           numStreams,
           options.valueOf(consumerConfigOpt),
           customRebalanceListener,
-          Option(options.valueOf(whitelistOpt)))
+          whitelistOpt)
       }
 
       // Create mirror maker threads.
