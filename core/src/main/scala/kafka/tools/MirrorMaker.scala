@@ -79,7 +79,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
   private var offsetCommitIntervalMs = 0
   private var abortOnSendFailure: Boolean = true
   @volatile private var exitingOnSendFailure: Boolean = false
-  private var targetTopic: String = null
+  private var topicPrefix: String = null
 
 
   // If a message send failed after retries are exhausted. The offset of the messages will also be removed from
@@ -173,6 +173,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
         .withRequiredArg()
         .describedAs("Java regex (String)")
         .ofType(classOf[String])
+        .defaultsTo("")
 
       val targetPartitions = parser.accepts("partitions",
         "Subscribed partitions to mirror.")
@@ -200,8 +201,8 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
         System.exit(1)
       }
 
-      targetTopic = options.valueOf(targetTopicPrefixOpt).toString + "_" + options.valueOf(whitelistOpt).toString
-      println("Kafka Mirror Target topic : " + targetTopic)
+      topicPrefix = options.valueOf(targetTopicPrefixOpt).toString
+
       abortOnSendFailure = options.valueOf(abortOnSendFailureOpt).toBoolean
       offsetCommitIntervalMs = options.valueOf(offsetCommitIntervalMsOpt).intValue()
       val numStreams = options.valueOf(numStreamsOpt).intValue()
@@ -223,7 +224,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
       producerProps.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer")
       producerProps.setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer")
       //Create producer to mirror data to new topic in target cluster
-      producer = new MirrorMakerProducer(producerProps, targetTopic)
+      producer = new MirrorMakerProducer(producerProps, topicPrefix)
 
 
       val useNewConsumer = options.has(useNewConsumerOpt)
@@ -436,9 +437,13 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
           try {
             while (!exitingOnSendFailure && !shuttingDown && mirrorMakerConsumer.hasData) {
               val data = mirrorMakerConsumer.receive()
-              val mirrorData = new BaseConsumerRecord(targetTopic,data.partition,data.offset, data.key, data.value)
+              var topicName = data.topic
+              if (topicPrefix != "") {
+                topicName = topicPrefix+"_"+data.topic
+              }
+              val mirrorData = new BaseConsumerRecord(topicName, data.partition, data.offset, data.key, data.value)
 
-              trace("Sending message with value size %d and offset %d".format(mirrorData.value.length, mirrorData.offset))
+              trace("Sending message with value size %d and offset %d".format(data.value.length, data.offset))
               val records = messageHandler.handle(mirrorData)
               records.foreach(producer.send)
               maybeFlushAndCommitOffsets()
@@ -552,7 +557,6 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
     extends MirrorMakerBaseConsumer {
     val regex = whitelistOpt.getOrElse(throw new IllegalArgumentException("New consumer only supports whitelist."))
     var recordIter: java.util.Iterator[ConsumerRecord[Array[Byte], Array[Byte]]] = null
-    var recordCount: Int = 0
 
     // TODO: we need to manually maintain the consumed offsets for new consumer
     // since its internal consumed position is updated in batch rather than one
@@ -581,8 +585,6 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
 
       val record = recordIter.next()
       val tp = new TopicPartition(record.topic, record.partition)
-      recordCount = recordCount + 1
-      //println("\nMirror data from partition: " + record.partition() + "      Partition count: " + recordCount)
 
       offsets.put(tp, record.offset + 1)
 
@@ -635,7 +637,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
     }
   }
 
-  private class MirrorMakerProducer(val producerProps: Properties, val topicTarget: String) {
+  private class MirrorMakerProducer(val producerProps: Properties, val topicPrefix: String) {
 
     val sync = producerProps.getProperty("producer.type", "async").equals("sync")
 
@@ -646,7 +648,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
         this.producer.send(record).get()
       } else {
         this.producer.send(record,
-          new MirrorMakerProducerCallback(topicTarget, record.key(), record.value()))
+          new MirrorMakerProducerCallback(record.topic(), record.key(), record.value()))
       }
     }
 
